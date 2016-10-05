@@ -1,34 +1,38 @@
-#!/usr/bin/env sh
-FLUME=/opt/flume/bin/flume-ng
+#!/usr/bin/env bash
+
+_FLUME_NG=${FLUME_NG:=bin/flume-ng}
+FLUME_CONF_DIR=${FLUME_CONF_DIR:=conf/}
+FLUME_CONF_FILE=${FLUME_CONF_FILE:=$FLUME_CONF_DIR/flume.properties}
+FLUME_DEFAULT_AGENT=${FLUME_DEFAULT_AGENT:="agent"}
+AGENT=$FLUME_DEFAULT_AGENT
 
 case "$1" in
 	agent)
-		ARGS="$(getopt -l "file:name:" -o f:n: -- $@)"
-		eval set -- $ARGS
-		while true ; do
+		shift
+		ARGS=""
+		while [ "$1" ]; do
 			case "$1" in
-				-f|--file) CONFIG=$2 ; shift ;;
-				-n|--name) AGENT=$2 ; shift ;;
-				--) shift ; break ;;
-				*) echo "Failed to parse args" ; exit 1 ;;
+				-f|--file) FLUME_CONF_FILE=$2; shift 2 ;;
+				-c|--conf) FLUME_CONF_DIR=$2; shift 2 ;;
+				-n|--name) AGENT=$2; shift 2 ;;
+				*) ARGS="$ARGS $1"; shift ;;
 			esac
 		done
+		case "$FLUME_MONITORING" in
+			http) ARGS="$ARGS -Dflume.monitoring.type=http" ;;
+		esac
 
-		if [ -f $CONFIG ]; then
-			sed -e "$(
-			printenv |
-			awk -F'=|\n' '/FLUME_[a-zA-Z0-9_]+=[a-zA-Z0-9_\-]+/{print $1, $2}' |
-			sed -e 's/\//\\\//g' |
-			awk '{print "s/{{"$1"}}/"$2"/g;"}'
-			)" $CONFIG > "${CONFIG}.local"
-			CONFIG="${CONFIG}.local"
-		fi
+		case "$FLUME_LOGGER" in
+			"") ;;
+			*) ARGS="$ARGS -Dflume.root.logger=$FLUME_LOGGER" ;;
+		esac
 
-		$FLUME $MODE \
-			-c conf \
-			-f $CONFIG \
-			-n $AGENT $@
+		cat $FLUME_CONF_FILE | envsubst > "$FLUME_CONF_FILE.local"
+
+		ARGS="-c $FLUME_CONF_DIR -n $AGENT $ARGS"
+		$_FLUME_NG agent -f $FLUME_CONF_FILE.local $ARGS
 		;;
-
-	*) $FLUME $@ ;;
+	*)
+		$_FLUME_NG $@
+		;;
 esac
